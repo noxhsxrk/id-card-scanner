@@ -1,17 +1,72 @@
 /**
  * NOTE: Request the rear camera at a resolution sharp enough for OCR/edge
- * detection. The `ideal` value is a hint — the browser delivers the highest
- * resolution it supports up to 1080p (falling back gracefully, unlike `exact`).
+ * detection. The `ideal` value is a hint, so browsers can fall back gracefully.
  *
- * Fallback: if the primary request fails (e.g. device busy), retries with
- * only the facingMode constraint — resolution defaults to device native.
+ * Multi-lens Android devices sometimes resolve `facingMode: environment` to an
+ * ultra-wide/macro/depth lens. We first request permission, then use device
+ * labels exposed after permission to reopen the likely rear main camera.
  */
-const FOCUS_MODES = ["continuous", "auto", "single-shot"] as const
+const FOCUS_MODES = ['continuous', 'auto', 'single-shot'] as const
+
+const REAR_CAMERA_CONSTRAINTS: MediaTrackConstraints = {
+  facingMode: { ideal: 'environment' },
+  width: { ideal: 1920 },
+  height: { ideal: 1080 },
+  aspectRatio: { ideal: 16 / 9 },
+}
 
 type FocusMode = (typeof FOCUS_MODES)[number]
 
 interface IFocusCapabilities extends MediaTrackCapabilities {
   focusMode?: FocusMode[]
+  zoom?: { max?: number; min?: number; step?: number }
+}
+
+interface IFocusConstraints extends MediaTrackConstraintSet {
+  focusMode?: FocusMode
+  zoom?: number
+}
+
+const stopStream = (stream: MediaStream): void => {
+  stream.getTracks().forEach((track) => track.stop())
+}
+
+const isExpectedCameraError = (error: unknown): boolean =>
+  error instanceof DOMException &&
+  (error.name === 'NotAllowedError' ||
+    error.name === 'PermissionDeniedError' ||
+    error.name === 'NotFoundError' ||
+    error.name === 'DevicesNotFoundError' ||
+    error.name === 'NotReadableError' ||
+    error.name === 'TrackStartError')
+
+const scoreRearCameraDevice = (device: MediaDeviceInfo): number => {
+  const label = device.label.toLowerCase()
+  let score = 0
+
+  if (device.kind !== 'videoinput') return Number.NEGATIVE_INFINITY
+
+  if (/\b(back|rear|environment|world)\b/.test(label)) score += 40
+  if (/\b(main|primary|1x|wide angle|wide-angle)\b/.test(label)) score += 20
+  if (/\b(front|user|face|selfie)\b/.test(label)) score -= 100
+  if (/\b(ultra|0\.5x|macro|depth|tele|telephoto|portrait)\b/.test(label)) score -= 35
+
+  return score
+}
+
+export const selectPreferredRearCameraDevice = (devices: MediaDeviceInfo[]): MediaDeviceInfo | undefined =>
+  devices
+    .filter((device) => device.kind === 'videoinput')
+    .map((device, index) => ({ device, index, score: scoreRearCameraDevice(device) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.device
+
+const getPreferredRearCameraDevice = async (): Promise<MediaDeviceInfo | undefined> => {
+  try {
+    return selectPreferredRearCameraDevice(await navigator.mediaDevices.enumerateDevices())
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -32,46 +87,79 @@ const applyAutofocus = async (stream: MediaStream): Promise<void> => {
     if (!mode) return
 
     await track.applyConstraints({
-      advanced: [{ focusMode: mode }],
+      advanced: [{ focusMode: mode } satisfies IFocusConstraints],
     } as unknown as MediaTrackConstraints)
   } catch {
     // Autofocus is a soft hint — ignore unsupported/denied focus requests.
   }
 }
 
+const applyDefaultZoom = async (stream: MediaStream): Promise<void> => {
+  const track = stream.getVideoTracks()[0]
+  if (!track) return
+
+  try {
+    const capabilities = track.getCapabilities() as IFocusCapabilities
+    const min = capabilities.zoom?.min
+    const max = capabilities.zoom?.max
+    if (typeof min !== 'number' || typeof max !== 'number' || max <= min) return
+
+    const zoom = Math.min(Math.max(1.25, min), max)
+    await track.applyConstraints({
+      advanced: [{ zoom } satisfies IFocusConstraints],
+    } as unknown as MediaTrackConstraints)
+  } catch {
+    // Zoom is only a hint to avoid ultra-wide softness on Android multi-lens cameras.
+  }
+}
+
+const tuneStreamForScanning = async (stream: MediaStream): Promise<void> => {
+  await applyAutofocus(stream)
+  await applyDefaultZoom(stream)
+}
+
 const requestRearCameraStream = async (): Promise<MediaStream> => {
   const constraints: MediaStreamConstraints = {
     audio: false,
-    video: {
-      facingMode: { ideal: "environment" },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-    },
-  };
+    video: REAR_CAMERA_CONSTRAINTS,
+  }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    await applyAutofocus(stream);
-    return stream;
-  } catch (error) {
-    if (
-      error instanceof DOMException &&
-      (error.name === "NotAllowedError" ||
-        error.name === "PermissionDeniedError" ||
-        error.name === "NotFoundError" ||
-        error.name === "DevicesNotFoundError" ||
-        error.name === "NotReadableError" ||
-        error.name === "TrackStartError")
-    ) {
-      throw error;
+    const stream = await navigator.mediaDevices.getUserMedia(constraints)
+    const preferredDevice = await getPreferredRearCameraDevice()
+    const activeDeviceId = stream.getVideoTracks()[0]?.getSettings().deviceId
+
+    if (preferredDevice?.deviceId && preferredDevice.deviceId !== activeDeviceId) {
+      try {
+        const preferredStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            ...REAR_CAMERA_CONSTRAINTS,
+            deviceId: { exact: preferredDevice.deviceId },
+          },
+        })
+        stopStream(stream)
+        await tuneStreamForScanning(preferredStream)
+        return preferredStream
+      } catch {
+        // Keep the already working rear camera if deviceId selection is rejected.
+      }
     }
+
+    await tuneStreamForScanning(stream)
+    return stream
+  } catch (error) {
+    if (isExpectedCameraError(error)) {
+      throw error
+    }
+
     const fallbackStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: "environment" } },
-    });
-    await applyAutofocus(fallbackStream);
-    return fallbackStream;
+      video: { facingMode: { ideal: 'environment' } },
+    })
+    await tuneStreamForScanning(fallbackStream)
+    return fallbackStream
   }
-};
+}
 
-export default requestRearCameraStream;
+export default requestRearCameraStream
