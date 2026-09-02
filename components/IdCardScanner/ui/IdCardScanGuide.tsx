@@ -39,7 +39,7 @@ const IdCardScanGuide = ({
   const frameRotation = getFrameRotation(isLockedLandscape, isLandscapeLeft)
 
   return (
-    <div className="relative z-10 flex flex-1 flex-col items-center justify-center">
+    <div className="pointer-events-none relative z-10 flex flex-1 flex-col items-center justify-center">
       {/* Guide frame — centered between header and footer */}
       <div
         className={cn(

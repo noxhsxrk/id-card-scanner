@@ -1,10 +1,17 @@
 'use client'
 
-import { type RefObject, useEffect, useRef } from 'react'
+import { type RefObject, useEffect, useRef, useState } from 'react'
 
 import type { ICameraFocusPoint } from '../camera/requestRearCameraStream'
 
 const MAX_PIXEL_RATIO = 3
+const FOCUS_INDICATOR_MS = 750
+
+interface IFocusIndicator {
+  id: number
+  x: number
+  y: number
+}
 
 interface ICameraPreviewCanvasProps {
   onFocusPoint?: (point: ICameraFocusPoint) => void
@@ -45,6 +52,8 @@ const mapCanvasPointToVideoPoint = (
  */
 const CameraPreviewCanvas = ({ onFocusPoint, videoRef }: ICameraPreviewCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [focusIndicator, setFocusIndicator] = useState<IFocusIndicator>()
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -94,20 +103,51 @@ const CameraPreviewCanvas = ({ onFocusPoint, videoRef }: ICameraPreviewCanvasPro
     }
   }, [videoRef])
 
-  return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden="true"
-      className="absolute inset-0 z-0 size-full touch-none"
-      onPointerDown={(event) => {
-        const canvas = canvasRef.current
-        const video = videoRef.current
-        if (!canvas || !video) return
+  useEffect(() => {
+    return () => {
+      if (focusTimerRef.current !== undefined) clearTimeout(focusTimerRef.current)
+    }
+  }, [])
 
-        const point = mapCanvasPointToVideoPoint(canvas, video, event.clientX, event.clientY)
-        if (point) onFocusPoint?.(point)
-      }}
-    />
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        aria-hidden="true"
+        className="absolute inset-0 z-0 size-full touch-none"
+        onPointerDown={(event) => {
+          const canvas = canvasRef.current
+          const video = videoRef.current
+          if (!canvas || !video) return
+
+          const rect = canvas.getBoundingClientRect()
+          setFocusIndicator({
+            id: Date.now(),
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
+          })
+
+          if (focusTimerRef.current !== undefined) clearTimeout(focusTimerRef.current)
+          focusTimerRef.current = setTimeout(() => {
+            setFocusIndicator(undefined)
+          }, FOCUS_INDICATOR_MS)
+
+          const point = mapCanvasPointToVideoPoint(canvas, video, event.clientX, event.clientY)
+          if (point) onFocusPoint?.(point)
+        }}
+      />
+
+      {focusIndicator && (
+        <div
+          key={focusIndicator.id}
+          aria-hidden="true"
+          className="pointer-events-none absolute z-30 size-20 -translate-x-1/2 -translate-y-1/2"
+          style={{ left: focusIndicator.x, top: focusIndicator.y }}
+        >
+          <div className="camera-focus-reticle size-full rounded-md border-2 border-tmn-primary shadow-[0_0_0_1px_rgba(0,0,0,0.35),0_0_18px_rgba(255,90,0,0.45)]" />
+        </div>
+      )}
+    </>
   )
 }
 

@@ -56,3 +56,26 @@ button { -webkit-tap-highlight-color: transparent; }
 .animate-error-progress {
   animation: error-progress 2.5s linear forwards;
 }
+
+@keyframes camera-focus-reticle {
+  0% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  72% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+.camera-focus-reticle {
+  animation: camera-focus-reticle 750ms ease-out forwards;
+}
