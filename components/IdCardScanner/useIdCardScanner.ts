@@ -129,7 +129,16 @@ const useIdCardScanner = ({ captureRotation = 270, onScanSuccess, verifyIdCardIm
     setScanState((prevState) => nextScanState(prevState, event))
   }, [])
 
-  const { cameraState, cameraError, cameraErrorType, retryCamera } = useCameraStream(videoRef)
+  const {
+    activeCameraId,
+    cameraState,
+    cameraError,
+    cameraErrorType,
+    cameraDebugLogs,
+    cameraDevices,
+    retryCamera,
+    switchCamera,
+  } = useCameraStream(videoRef)
 
   const focusCameraAtPoint = useCallback((point: ICameraFocusPoint) => {
     const stream = videoRef.current?.srcObject
@@ -295,8 +304,11 @@ const useIdCardScanner = ({ captureRotation = 270, onScanSuccess, verifyIdCardIm
   }, [])
 
   return {
+    activeCameraId,
     cameraError,
     cameraErrorType,
+    cameraDebugLogs,
+    cameraDevices,
     cameraState,
     guideCanvasRef,
     focusCameraAtPoint,
@@ -304,6 +316,7 @@ const useIdCardScanner = ({ captureRotation = 270, onScanSuccess, verifyIdCardIm
     retryScan,
     scannerStatus,
     scanState,
+    switchCamera,
     videoRef,
   }
 }

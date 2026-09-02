@@ -159,14 +159,19 @@ const tuneStreamForScanning = async (stream: MediaStream): Promise<void> => {
   await focusStreamAtPoint(stream)
 }
 
-const requestRearCameraStream = async (): Promise<MediaStream> => {
+const requestRearCameraStream = async (deviceId?: string): Promise<MediaStream> => {
   const constraints: MediaStreamConstraints = {
     audio: false,
-    video: REAR_CAMERA_CONSTRAINTS,
+    video: deviceId ? { ...REAR_CAMERA_CONSTRAINTS, deviceId: { exact: deviceId } } : REAR_CAMERA_CONSTRAINTS,
   }
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia(constraints)
+    if (deviceId) {
+      await tuneStreamForScanning(stream)
+      return stream
+    }
+
     const preferredDevice = await getPreferredRearCameraDevice()
     const activeDeviceId = stream.getVideoTracks()[0]?.getSettings().deviceId
 

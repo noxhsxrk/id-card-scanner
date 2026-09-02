@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 
 import CameraAccessOverlay from './ui/CameraAccessOverlay'
+import CameraDebugPanel from './ui/CameraDebugPanel'
 import CameraPreviewCanvas from './ui/CameraPreviewCanvas'
 import IdCardScanGuide from './ui/IdCardScanGuide'
 import IdCardScannerFooter from './ui/IdCardScannerFooter'
@@ -45,16 +46,20 @@ const IdCardScanner = ({ onBack, onSuccess, onVerify }: IIdCardScannerProps) => 
   const captureRotation = getCaptureRotation(mode, isViewportLandscape, isLockedLandscape)
 
   const {
+    activeCameraId,
     scanState,
     cameraState,
     cameraError,
     cameraErrorType,
+    cameraDebugLogs,
+    cameraDevices,
     videoRef,
     guideCanvasRef,
     focusCameraAtPoint,
     retryCamera,
     retryScan,
     scannerStatus,
+    switchCamera,
   } = useIdCardScanner({
     captureRotation,
     onScanSuccess: onSuccess,
@@ -96,6 +101,13 @@ const IdCardScanner = ({ onBack, onSuccess, onVerify }: IIdCardScannerProps) => 
       <CameraPreviewCanvas onFocusPoint={focusCameraAtPoint} videoRef={videoRef} />
 
       <div className="pointer-events-none absolute inset-0 bg-black/5" />
+
+      <CameraDebugPanel
+        activeCameraId={activeCameraId}
+        devices={cameraDevices}
+        logs={cameraDebugLogs}
+        onSelectCamera={switchCamera}
+      />
 
       <IdCardScannerHeader isViewportLandscape={isViewportLandscape} mode={mode} onBack={onBack} />
 
