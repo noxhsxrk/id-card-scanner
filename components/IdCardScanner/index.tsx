@@ -51,6 +51,7 @@ const IdCardScanner = ({ onBack, onSuccess, onVerify }: IIdCardScannerProps) => 
     cameraErrorType,
     videoRef,
     guideCanvasRef,
+    focusCameraAtPoint,
     retryCamera,
     retryScan,
     scannerStatus,
@@ -92,7 +93,7 @@ const IdCardScanner = ({ onBack, onSuccess, onVerify }: IIdCardScannerProps) => 
         playsInline
       />
 
-      <CameraPreviewCanvas videoRef={videoRef} />
+      <CameraPreviewCanvas onFocusPoint={focusCameraAtPoint} videoRef={videoRef} />
 
       <div className="pointer-events-none absolute inset-0 bg-black/5" />
 

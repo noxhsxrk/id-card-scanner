@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { focusStreamAtPoint, type ICameraFocusPoint } from './camera/requestRearCameraStream'
 import useCameraStream from './camera/useCameraStream'
 import type { IScannerStatus } from './detection/detectIdCard'
 import useIdCardDetection from './detection/useIdCardDetection'
@@ -129,6 +130,13 @@ const useIdCardScanner = ({ captureRotation = 270, onScanSuccess, verifyIdCardIm
   }, [])
 
   const { cameraState, cameraError, cameraErrorType, retryCamera } = useCameraStream(videoRef)
+
+  const focusCameraAtPoint = useCallback((point: ICameraFocusPoint) => {
+    const stream = videoRef.current?.srcObject
+    if (!(stream instanceof MediaStream)) return
+
+    void focusStreamAtPoint(stream, point)
+  }, [])
 
   const onDetectionUpdate = useCallback(
     (status: IScannerStatus) => {
@@ -291,6 +299,7 @@ const useIdCardScanner = ({ captureRotation = 270, onScanSuccess, verifyIdCardIm
     cameraErrorType,
     cameraState,
     guideCanvasRef,
+    focusCameraAtPoint,
     retryCamera,
     retryScan,
     scannerStatus,

@@ -2,10 +2,38 @@
 
 import { type RefObject, useEffect, useRef } from 'react'
 
+import type { ICameraFocusPoint } from '../camera/requestRearCameraStream'
+
 const MAX_PIXEL_RATIO = 3
 
 interface ICameraPreviewCanvasProps {
+  onFocusPoint?: (point: ICameraFocusPoint) => void
   videoRef: RefObject<HTMLVideoElement | null>
+}
+
+const mapCanvasPointToVideoPoint = (
+  canvas: HTMLCanvasElement,
+  video: HTMLVideoElement,
+  clientX: number,
+  clientY: number,
+): ICameraFocusPoint | null => {
+  if (!video.videoWidth || !video.videoHeight) return null
+
+  const rect = canvas.getBoundingClientRect()
+  if (!rect.width || !rect.height) return null
+
+  const x = clientX - rect.left
+  const y = clientY - rect.top
+  const scale = Math.max(rect.width / video.videoWidth, rect.height / video.videoHeight)
+  const sw = rect.width / scale
+  const sh = rect.height / scale
+  const sx = (video.videoWidth - sw) / 2
+  const sy = (video.videoHeight - sh) / 2
+
+  return {
+    x: (sx + x / scale) / video.videoWidth,
+    y: (sy + y / scale) / video.videoHeight,
+  }
 }
 
 /**
@@ -15,7 +43,7 @@ interface ICameraPreviewCanvasProps {
  * is drawn from the current geometry, viewport rotations never show the stale
  * letterboxed texture that a plain <video> flashes while the browser refits it.
  */
-const CameraPreviewCanvas = ({ videoRef }: ICameraPreviewCanvasProps) => {
+const CameraPreviewCanvas = ({ onFocusPoint, videoRef }: ICameraPreviewCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -66,7 +94,21 @@ const CameraPreviewCanvas = ({ videoRef }: ICameraPreviewCanvasProps) => {
     }
   }, [videoRef])
 
-  return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 size-full" />
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      className="absolute inset-0 z-0 size-full touch-none"
+      onPointerDown={(event) => {
+        const canvas = canvasRef.current
+        const video = videoRef.current
+        if (!canvas || !video) return
+
+        const point = mapCanvasPointToVideoPoint(canvas, video, event.clientX, event.clientY)
+        if (point) onFocusPoint?.(point)
+      }}
+    />
+  )
 }
 
 export default CameraPreviewCanvas

@@ -10,21 +10,29 @@ const FOCUS_MODES = ['continuous', 'auto', 'single-shot'] as const
 
 const REAR_CAMERA_CONSTRAINTS: MediaTrackConstraints = {
   facingMode: { ideal: 'environment' },
-  width: { ideal: 1920 },
-  height: { ideal: 1080 },
+  width: { ideal: 3840 },
+  height: { ideal: 2160 },
   aspectRatio: { ideal: 16 / 9 },
+  frameRate: { ideal: 30, max: 30 },
 }
 
 type FocusMode = (typeof FOCUS_MODES)[number]
 
 interface IFocusCapabilities extends MediaTrackCapabilities {
   focusMode?: FocusMode[]
+  pointsOfInterest?: ICameraFocusPoint[]
   zoom?: { max?: number; min?: number; step?: number }
 }
 
 interface IFocusConstraints extends MediaTrackConstraintSet {
   focusMode?: FocusMode
+  pointsOfInterest?: ICameraFocusPoint[]
   zoom?: number
+}
+
+export interface ICameraFocusPoint {
+  x: number
+  y: number
 }
 
 const stopStream = (stream: MediaStream): void => {
@@ -94,6 +102,38 @@ const applyAutofocus = async (stream: MediaStream): Promise<void> => {
   }
 }
 
+const clampFocusPoint = ({ x, y }: ICameraFocusPoint): ICameraFocusPoint => ({
+  x: Math.min(Math.max(x, 0), 1),
+  y: Math.min(Math.max(y, 0), 1),
+})
+
+export const focusStreamAtPoint = async (
+  stream: MediaStream | null | undefined,
+  point: ICameraFocusPoint = { x: 0.5, y: 0.5 },
+): Promise<void> => {
+  const track = stream?.getVideoTracks()[0]
+  if (!track) return
+
+  try {
+    const capabilities = track.getCapabilities() as IFocusCapabilities
+    const modes = capabilities.focusMode ?? []
+    const focusMode = (['single-shot', 'auto', 'continuous'] as const).find((candidate) => modes.includes(candidate))
+    const focusConstraints: IFocusConstraints = {
+      pointsOfInterest: [clampFocusPoint(point)],
+    }
+
+    if (focusMode) {
+      focusConstraints.focusMode = focusMode
+    }
+
+    await track.applyConstraints({
+      advanced: [focusConstraints],
+    } as unknown as MediaTrackConstraints)
+  } catch {
+    // Android camera stacks differ widely; unsupported focus points must not break scanning.
+  }
+}
+
 const applyDefaultZoom = async (stream: MediaStream): Promise<void> => {
   const track = stream.getVideoTracks()[0]
   if (!track) return
@@ -116,6 +156,7 @@ const applyDefaultZoom = async (stream: MediaStream): Promise<void> => {
 const tuneStreamForScanning = async (stream: MediaStream): Promise<void> => {
   await applyAutofocus(stream)
   await applyDefaultZoom(stream)
+  await focusStreamAtPoint(stream)
 }
 
 const requestRearCameraStream = async (): Promise<MediaStream> => {
